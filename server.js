@@ -32,11 +32,42 @@ const {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middlewares
-app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true
-}));
+// ============================================================================
+// CONFIGURACIÓN DE CORS MEJORADA
+// ============================================================================
+
+const allowedOrigins = [
+  'http://localhost:3000',                                      // Desarrollo local
+  'https://portal-arvic-v1-production.up.railway.app',         // Frontend en Railway
+  process.env.FRONTEND_URL                                      // Variable de entorno adicional
+].filter(Boolean); // Eliminar valores undefined
+
+console.log('🔐 CORS configurado para los siguientes orígenes:');
+allowedOrigins.forEach(origin => console.log(`   ✅ ${origin}`));
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir peticiones sin origin (Postman, apps móviles, Thunder Client, etc.)
+    if (!origin) {
+      console.log('✅ Petición sin origin (permitida)');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log(`✅ Origen permitido: ${origin}`);
+      callback(null, true);
+    } else {
+      console.log(`❌ Origen bloqueado por CORS: ${origin}`);
+      callback(new Error('No permitido por CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -252,7 +283,7 @@ app.delete('/api/users/:userId', authenticateToken, isAdmin, async (req, res) =>
 });
 
 // ============================================================================
-// RUTAS DE EMPRESAS
+// RUTAS DE EMPRESAS (Solo Admin)
 // ============================================================================
 
 app.get('/api/companies', authenticateToken, async (req, res) => {
