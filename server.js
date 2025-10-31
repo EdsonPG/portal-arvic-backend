@@ -259,9 +259,21 @@ app.post('/api/users', authenticateToken, isAdmin, async (req, res) => {
   try {
     const { name, email, role } = req.body;
 
-    // Obtener el siguiente ID de usuario
-    const lastUser = await User.findOne().sort({ userId: -1 });
-    const nextId = lastUser ? (parseInt(lastUser.userId) + 1).toString().padStart(4, '0') : '0001';
+    console.log('➕ Creando nuevo usuario:', { name, email, role });
+
+    // Obtener todos los usuarios y filtrar solo los que tienen userId numérico de 4 dígitos
+    const allUsers = await User.find().sort({ userId: -1 });
+    const numericUsers = allUsers.filter(u => /^\d{4}$/.test(u.userId));
+    
+    let nextId = '0001';
+    if (numericUsers.length > 0) {
+      const lastNumericId = parseInt(numericUsers[0].userId);
+      nextId = (lastNumericId + 1).toString().padStart(4, '0');
+    }
+    
+    console.log('🔢 Usuarios numéricos encontrados:', numericUsers.length);
+    console.log('🔢 Último ID numérico:', numericUsers[0]?.userId || 'ninguno');
+    console.log('🆕 Nuevo ID asignado:', nextId);
 
     // Generar contraseña temporal
     const tempPassword = 'arvic' + nextId;
@@ -276,12 +288,16 @@ app.post('/api/users', authenticateToken, isAdmin, async (req, res) => {
     });
 
     await newUser.save();
+    
+    console.log('✅ Usuario creado exitosamente con ID:', nextId);
+    
     res.json({ 
       success: true, 
       user: { ...newUser.toObject(), password: undefined },
       tempPassword: tempPassword 
     });
   } catch (error) {
+    console.error('❌ Error creando usuario:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
