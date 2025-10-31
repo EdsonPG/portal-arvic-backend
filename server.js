@@ -89,9 +89,18 @@ app.use('/api/', limiter);
 // CONEXIÓN A MONGODB
 // ============================================================================
 
+console.log('🔄 Intentando conectar a MongoDB...');
+console.log('📍 URI:', process.env.MONGODB_URI ? 'Configurada ✅' : 'NO configurada ❌');
+
 mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log('✅ Conectado a MongoDB Atlas'))
-.catch(err => console.error('❌ Error conectando a MongoDB:', err));
+.then(() => {
+  console.log('✅ Conectado a MongoDB Atlas');
+  console.log('📊 Estado de conexión:', mongoose.connection.readyState);
+})
+.catch(err => {
+  console.error('❌ Error conectando a MongoDB:', err);
+  console.error('💡 Verifica tu variable MONGODB_URI en Railway');
+});
 
 // ============================================================================
 // MIDDLEWARE DE AUTENTICACIÓN
@@ -127,11 +136,23 @@ function isAdmin(req, res, next) {
 // ============================================================================
 
 app.get('/api/health', (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = {
+    0: 'desconectado',
+    1: 'conectado',
+    2: 'conectando',
+    3: 'desconectando'
+  };
+  
   res.json({ 
     success: true, 
     message: 'Portal ARVIC API funcionando correctamente',
     timestamp: new Date().toISOString(),
-    mongodb: mongoose.connection.readyState === 1 ? 'conectado' : 'desconectado'
+    mongodb: {
+      status: dbStatus[dbState] || 'desconocido',
+      readyState: dbState
+    },
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -216,9 +237,12 @@ app.get('/api/auth/verify', authenticateToken, async (req, res) => {
 // Obtener todos los usuarios
 app.get('/api/users', authenticateToken, isAdmin, async (req, res) => {
   try {
+    console.log('📊 Solicitando lista de usuarios...');
     const users = await User.find().select('-password');
+    console.log(`✅ Usuarios encontrados: ${users.length}`);
     res.json({ success: true, users: users });
   } catch (error) {
+    console.error('❌ Error obteniendo usuarios:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
