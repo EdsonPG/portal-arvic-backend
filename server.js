@@ -33,11 +33,12 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================================================
-// CONFIGURACIÓN DE CORS MEJORADA
+// CONFIGURACIÓN DE CORS ACTUALIZADA
 // ============================================================================
 
 const allowedOrigins = [
   'http://localhost:3000',                                      // Desarrollo local
+  'http://127.0.0.1:3000',                                      // Desarrollo local alternativo
   'https://portal-arvic-v1-production.up.railway.app',         // Frontend en Railway
   process.env.FRONTEND_URL                                      // Variable de entorno adicional
 ].filter(Boolean); // Eliminar valores undefined
@@ -117,6 +118,19 @@ function isAdmin(req, res, next) {
   }
   next();
 }
+
+// ============================================================================
+// RUTA DE HEALTH CHECK
+// ============================================================================
+
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Portal ARVIC API funcionando correctamente',
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'conectado' : 'desconectado'
+  });
+});
 
 // ============================================================================
 // RUTAS DE AUTENTICACIÓN
@@ -215,9 +229,9 @@ app.post('/api/users', authenticateToken, isAdmin, async (req, res) => {
     const lastUser = await User.findOne().sort({ userId: -1 });
     const nextId = lastUser ? (parseInt(lastUser.userId) + 1).toString().padStart(4, '0') : '0001';
 
-    // Generar contraseña única
-    const password = `cons${nextId}.`;
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Generar contraseña temporal
+    const tempPassword = 'arvic' + nextId;
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
     const newUser = new User({
       userId: nextId,
@@ -228,54 +242,32 @@ app.post('/api/users', authenticateToken, isAdmin, async (req, res) => {
     });
 
     await newUser.save();
-
-    res.json({
-      success: true,
-      user: {
-        id: newUser.userId,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role,
-        password: password // Devolver contraseña sin hash solo al crear
-      }
+    res.json({ 
+      success: true, 
+      user: { ...newUser.toObject(), password: undefined },
+      tempPassword: tempPassword 
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Actualizar usuario
 app.put('/api/users/:userId', authenticateToken, isAdmin, async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
       { userId: req.params.userId },
-      { ...req.body, updatedAt: Date.now() },
+      { $set: req.body, updatedAt: new Date() },
       { new: true }
     ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
-    }
-
     res.json({ success: true, user: user });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Eliminar usuario
 app.delete('/api/users/:userId', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const user = await User.findOneAndDelete({ userId: req.params.userId });
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
-    }
-
-    // Eliminar también todas las asignaciones del usuario
-    await Assignment.deleteMany({ consultorId: req.params.userId });
-    await ProjectAssignment.deleteMany({ consultorId: req.params.userId });
-    await TaskAssignment.deleteMany({ consultorId: req.params.userId });
-
+    await User.findOneAndDelete({ userId: req.params.userId });
     res.json({ success: true, message: 'Usuario eliminado correctamente' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -337,10 +329,9 @@ app.delete('/api/companies/:companyId', authenticateToken, isAdmin, async (req, 
 });
 
 // ============================================================================
-// RUTAS DE PROYECTOS, SOPORTES, MÓDULOS (Similar estructura)
+// RUTAS DE PROYECTOS
 // ============================================================================
 
-// PROYECTOS
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
     const projects = await Project.find();
@@ -367,7 +358,33 @@ app.post('/api/projects', authenticateToken, isAdmin, async (req, res) => {
   }
 });
 
-// SOPORTES
+app.put('/api/projects/:projectId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const project = await Project.findOneAndUpdate(
+      { projectId: req.params.projectId },
+      req.body,
+      { new: true }
+    );
+    res.json({ success: true, project: project });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/projects/:projectId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    await Project.findOneAndDelete({ projectId: req.params.projectId });
+    await ProjectAssignment.deleteMany({ projectId: req.params.projectId });
+    res.json({ success: true, message: 'Proyecto eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
+// RUTAS DE SOPORTES
+// ============================================================================
+
 app.get('/api/supports', authenticateToken, async (req, res) => {
   try {
     const supports = await Support.find();
@@ -394,7 +411,33 @@ app.post('/api/supports', authenticateToken, isAdmin, async (req, res) => {
   }
 });
 
-// MÓDULOS
+app.put('/api/supports/:supportId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const support = await Support.findOneAndUpdate(
+      { supportId: req.params.supportId },
+      req.body,
+      { new: true }
+    );
+    res.json({ success: true, support: support });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/supports/:supportId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    await Support.findOneAndDelete({ supportId: req.params.supportId });
+    await Assignment.deleteMany({ supportId: req.params.supportId });
+    res.json({ success: true, message: 'Soporte eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
+// RUTAS DE MÓDULOS
+// ============================================================================
+
 app.get('/api/modules', authenticateToken, async (req, res) => {
   try {
     const modules = await Module.find();
@@ -421,42 +464,50 @@ app.post('/api/modules', authenticateToken, isAdmin, async (req, res) => {
   }
 });
 
-// ============================================================================
-// RUTAS DE ASIGNACIONES
-// ============================================================================
-
-// Obtener asignaciones por usuario
-app.get('/api/assignments/user/:userId', authenticateToken, async (req, res) => {
+app.put('/api/modules/:moduleId', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const supportAssignments = await Assignment.find({
-      consultorId: req.params.userId,
-      isActive: true
-    });
-
-    const projectAssignments = await ProjectAssignment.find({
-      consultorId: req.params.userId,
-      isActive: true
-    });
-
-    const taskAssignments = await TaskAssignment.find({
-      consultorId: req.params.userId,
-      isActive: true
-    });
-
-    res.json({
-      success: true,
-      assignments: {
-        supports: supportAssignments,
-        projects: projectAssignments,
-        tasks: taskAssignments
-      }
-    });
+    const module = await Module.findOneAndUpdate(
+      { moduleId: req.params.moduleId },
+      req.body,
+      { new: true }
+    );
+    res.json({ success: true, module: module });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Crear asignación de soporte
+app.delete('/api/modules/:moduleId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    await Module.findOneAndDelete({ moduleId: req.params.moduleId });
+    res.json({ success: true, message: 'Módulo eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
+// RUTAS DE ASIGNACIONES (SOPORTES)
+// ============================================================================
+
+app.get('/api/assignments', authenticateToken, async (req, res) => {
+  try {
+    const assignments = await Assignment.find();
+    res.json({ success: true, assignments: assignments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/assignments/user/:userId', authenticateToken, async (req, res) => {
+  try {
+    const assignments = await Assignment.find({ consultorId: req.params.userId, isActive: true });
+    res.json({ success: true, assignments: assignments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 app.post('/api/assignments', authenticateToken, isAdmin, async (req, res) => {
   try {
     const lastAssignment = await Assignment.findOne().sort({ assignmentId: -1 });
@@ -470,16 +521,196 @@ app.post('/api/assignments', authenticateToken, isAdmin, async (req, res) => {
     await newAssignment.save();
 
     // Crear entrada en tarifario
-    const tarifaId = `tarifa_${nextId}`;
-    const newTarifa = new Tarifario({
-      tarifaId: tarifaId,
+    const tarifario = new Tarifario({
+      tarifaId: `TAR-${nextId}`,
       idAsignacion: nextId,
       tipo: 'soporte',
-      ...req.body
+      consultorId: req.body.consultorId,
+      clienteId: req.body.companyId,
+      trabajoId: req.body.supportId,
+      modulo: req.body.moduleId,
+      costoConsultor: req.body.tarifaConsultor || 0,
+      costoCliente: req.body.tarifaCliente || 0,
+      margen: (req.body.tarifaCliente || 0) - (req.body.tarifaConsultor || 0)
     });
-    await newTarifa.save();
+
+    await tarifario.save();
 
     res.json({ success: true, assignment: newAssignment });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put('/api/assignments/:assignmentId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const assignment = await Assignment.findOneAndUpdate(
+      { assignmentId: req.params.assignmentId },
+      req.body,
+      { new: true }
+    );
+    res.json({ success: true, assignment: assignment });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/assignments/:assignmentId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    await Assignment.findOneAndDelete({ assignmentId: req.params.assignmentId });
+    await Report.deleteMany({ assignmentId: req.params.assignmentId });
+    res.json({ success: true, message: 'Asignación eliminada correctamente' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
+// RUTAS DE ASIGNACIONES DE PROYECTOS
+// ============================================================================
+
+app.get('/api/assignments/projects', authenticateToken, async (req, res) => {
+  try {
+    const projectAssignments = await ProjectAssignment.find();
+    res.json({ success: true, assignments: projectAssignments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/assignments/projects/user/:userId', authenticateToken, async (req, res) => {
+  try {
+    const projectAssignments = await ProjectAssignment.find({ 
+      consultorId: req.params.userId, 
+      isActive: true 
+    });
+    res.json({ success: true, assignments: projectAssignments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/assignments/projects', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const lastAssignment = await ProjectAssignment.findOne().sort({ projectAssignmentId: -1 });
+    const nextId = lastAssignment ? 
+      (parseInt(lastAssignment.projectAssignmentId) + 1).toString().padStart(4, '0') : '0001';
+
+    const newProjectAssignment = new ProjectAssignment({
+      projectAssignmentId: nextId,
+      ...req.body
+    });
+
+    await newProjectAssignment.save();
+
+    // Crear entrada en tarifario
+    const tarifario = new Tarifario({
+      tarifaId: `TAR-P-${nextId}`,
+      idAsignacion: nextId,
+      tipo: 'proyecto',
+      consultorId: req.body.consultorId,
+      clienteId: req.body.companyId,
+      trabajoId: req.body.projectId,
+      modulo: req.body.moduleId,
+      costoConsultor: req.body.tarifaConsultor || 0,
+      costoCliente: req.body.tarifaCliente || 0,
+      margen: (req.body.tarifaCliente || 0) - (req.body.tarifaConsultor || 0)
+    });
+
+    await tarifario.save();
+
+    res.json({ success: true, assignment: newProjectAssignment });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/assignments/projects/:projectAssignmentId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    await ProjectAssignment.findOneAndDelete({ projectAssignmentId: req.params.projectAssignmentId });
+    await Report.deleteMany({ assignmentId: req.params.projectAssignmentId });
+    res.json({ success: true, message: 'Asignación de proyecto eliminada' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
+// RUTAS DE TAREAS
+// ============================================================================
+
+app.get('/api/assignments/tasks', authenticateToken, async (req, res) => {
+  try {
+    const taskAssignments = await TaskAssignment.find();
+    res.json({ success: true, assignments: taskAssignments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/assignments/tasks/user/:userId', authenticateToken, async (req, res) => {
+  try {
+    const taskAssignments = await TaskAssignment.find({ 
+      consultorId: req.params.userId,
+      isActive: true
+    });
+    res.json({ success: true, assignments: taskAssignments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/assignments/tasks', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const lastTask = await TaskAssignment.findOne().sort({ taskId: -1 });
+    const nextId = lastTask ? (parseInt(lastTask.taskId) + 1).toString().padStart(4, '0') : '0001';
+
+    const newTask = new TaskAssignment({
+      taskId: nextId,
+      ...req.body
+    });
+
+    await newTask.save();
+
+    // Crear entrada en tarifario
+    const tarifario = new Tarifario({
+      tarifaId: `TAR-T-${nextId}`,
+      idAsignacion: nextId,
+      tipo: 'tarea',
+      consultorId: req.body.consultorId,
+      clienteId: req.body.companyId,
+      trabajoId: req.body.linkedSupportId,
+      modulo: req.body.moduleId,
+      costoConsultor: req.body.tarifaConsultor || 0,
+      costoCliente: req.body.tarifaCliente || 0,
+      margen: (req.body.tarifaCliente || 0) - (req.body.tarifaConsultor || 0)
+    });
+
+    await tarifario.save();
+
+    res.json({ success: true, task: newTask });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put('/api/assignments/tasks/:taskId', authenticateToken, async (req, res) => {
+  try {
+    const task = await TaskAssignment.findOneAndUpdate(
+      { taskId: req.params.taskId },
+      req.body,
+      { new: true }
+    );
+    res.json({ success: true, task: task });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/assignments/tasks/:taskId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    await TaskAssignment.findOneAndDelete({ taskId: req.params.taskId });
+    res.json({ success: true, message: 'Tarea eliminada correctamente' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -489,27 +720,33 @@ app.post('/api/assignments', authenticateToken, isAdmin, async (req, res) => {
 // RUTAS DE REPORTES
 // ============================================================================
 
-// Obtener todos los reportes (Admin)
-app.get('/api/reports', authenticateToken, isAdmin, async (req, res) => {
+app.get('/api/reports', authenticateToken, async (req, res) => {
   try {
-    const reports = await Report.find().sort({ createdAt: -1 });
+    const reports = await Report.find();
     res.json({ success: true, reports: reports });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Obtener reportes por usuario
 app.get('/api/reports/user/:userId', authenticateToken, async (req, res) => {
   try {
-    const reports = await Report.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    const reports = await Report.find({ userId: req.params.userId });
     res.json({ success: true, reports: reports });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Crear reporte
+app.get('/api/reports/assignment/:assignmentId', authenticateToken, async (req, res) => {
+  try {
+    const reports = await Report.find({ assignmentId: req.params.assignmentId });
+    res.json({ success: true, reports: reports });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 app.post('/api/reports', authenticateToken, async (req, res) => {
   try {
     const lastReport = await Report.findOne().sort({ reportId: -1 });
@@ -517,7 +754,6 @@ app.post('/api/reports', authenticateToken, async (req, res) => {
 
     const newReport = new Report({
       reportId: nextId,
-      userId: req.user.userId,
       ...req.body
     });
 
@@ -528,53 +764,103 @@ app.post('/api/reports', authenticateToken, async (req, res) => {
   }
 });
 
-// Aprobar/Rechazar reporte (Admin)
-app.put('/api/reports/:reportId/status', authenticateToken, isAdmin, async (req, res) => {
+app.put('/api/reports/:reportId', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const { status, feedback } = req.body;
-
     const report = await Report.findOneAndUpdate(
       { reportId: req.params.reportId },
-      {
-        status: status,
-        feedback: feedback || '',
-        approvedBy: status === 'Aprobado' ? req.user.userId : null,
-        approvedAt: status === 'Aprobado' ? Date.now() : null,
-        updatedAt: Date.now()
-      },
+      req.body,
       { new: true }
     );
-
     res.json({ success: true, report: report });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// ============================================================================
-// RUTA DE HEALTH CHECK
-// ============================================================================
-
-app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Portal ARVIC API funcionando correctamente',
-    timestamp: new Date().toISOString()
-  });
+app.delete('/api/reports/:reportId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    await Report.findOneAndDelete({ reportId: req.params.reportId });
+    res.json({ success: true, message: 'Reporte eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
 
 // ============================================================================
-// INICIALIZACIÓN DEL SERVIDOR
+// RUTAS DE TARIFARIO
+// ============================================================================
+
+app.get('/api/rates', authenticateToken, async (req, res) => {
+  try {
+    const tarifas = await Tarifario.find();
+    res.json({ success: true, tarifario: tarifas });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put('/api/rates/:tarifaId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const tarifa = await Tarifario.findOneAndUpdate(
+      { tarifaId: req.params.tarifaId },
+      { ...req.body, updatedAt: new Date() },
+      { new: true }
+    );
+    res.json({ success: true, tarifa: tarifa });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
+// RUTAS ADICIONALES
+// ============================================================================
+
+// Resumen de consultores
+app.get('/api/users/consultants/summary', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const users = await User.find({ role: 'consultor' }).select('-password');
+    const assignments = await Assignment.find();
+    const projectAssignments = await ProjectAssignment.find();
+    const taskAssignments = await TaskAssignment.find();
+    
+    const summary = users.map(user => {
+      const userAssignments = assignments.filter(a => a.consultorId === user.userId);
+      const userProjects = projectAssignments.filter(p => p.consultorId === user.userId);
+      const userTasks = taskAssignments.filter(t => t.consultorId === user.userId);
+      
+      return {
+        userId: user.userId,
+        name: user.name,
+        totalAssignments: userAssignments.length + userProjects.length + userTasks.length,
+        supportAssignments: userAssignments.length,
+        projectAssignments: userProjects.length,
+        taskAssignments: userTasks.length
+      };
+    });
+    
+    res.json({ success: true, summary: summary });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Reportes generados (aprobados)
+app.get('/api/reports/generated', authenticateToken, async (req, res) => {
+  try {
+    const approvedReports = await Report.find({ status: 'Aprobado' });
+    res.json({ success: true, reports: approvedReports });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================================
+// INICIAR SERVIDOR
 // ============================================================================
 
 app.listen(PORT, () => {
-  console.log(`✅ Servidor corriendo en puerto ${PORT}`);
-  console.log(`🌍 Entorno: ${process.env.NODE_ENV}`);
-  console.log(`🔗 API: http://localhost:${PORT}/api`);
-});
-
-// Manejo de errores no capturados
-process.on('unhandledRejection', (err) => {
-  console.error('❌ Error no manejado:', err);
-  process.exit(1);
+  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+  console.log(`📍 API disponible en: http://localhost:${PORT}/api`);
+  console.log(`🔐 CORS habilitado para:`, allowedOrigins);
 });
