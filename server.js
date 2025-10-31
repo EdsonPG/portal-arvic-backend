@@ -33,6 +33,12 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================================================
+// CONFIGURACIÓN DE TRUST PROXY PARA RAILWAY
+// ============================================================================
+// Railway usa un proxy reverso, necesitamos confiar en él
+app.set('trust proxy', true);
+
+// ============================================================================
 // CONFIGURACIÓN DE CORS ACTUALIZADA
 // ============================================================================
 
@@ -83,10 +89,7 @@ app.use('/api/', limiter);
 // CONEXIÓN A MONGODB
 // ============================================================================
 
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log('✅ Conectado a MongoDB Atlas'))
 .catch(err => console.error('❌ Error conectando a MongoDB:', err));
 
