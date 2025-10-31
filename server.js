@@ -78,10 +78,17 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting para prevenir ataques
+// Rate limiting para prevenir ataques (ajustado para producción)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100 // máximo 100 requests por IP
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 200, // máximo 200 requests por minuto
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Demasiadas peticiones desde esta IP, por favor intenta de nuevo más tarde.',
+  skip: (req) => {
+    // No limitar health checks
+    return req.path === '/api/health';
+  }
 });
 app.use('/api/', limiter);
 
