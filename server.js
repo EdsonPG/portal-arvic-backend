@@ -293,8 +293,13 @@ app.post('/api/users', authenticateToken, isAdmin, async (req, res) => {
     
     res.json({ 
       success: true, 
-      user: { ...newUser.toObject(), password: undefined },
-      tempPassword: tempPassword 
+      user: {
+        id: newUser.userId,           // Frontend espera 'id'
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        password: tempPassword         // Frontend espera 'password'
+      }
     });
   } catch (error) {
     console.error('❌ Error creando usuario:', error);
